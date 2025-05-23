@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multiplayer Quiz</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(to right, #667eea, #764ba2);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+  </style>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "DEIN_API_KEY",
+      authDomain: "DEIN_PROJEKT.firebaseapp.com",
+      databaseURL: "https://DEIN_PROJEKT.firebaseio.com",
+      projectId: "DEIN_PROJEKT",
+      storageBucket: "DEIN_PROJEKT.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abc123"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const quizFragen = [];
+
+    for (let i = 1; i <= 100; i++) {
+      quizFragen.push({
+        frage: `Beispielfrage ${i}: Was ist die richtige Antwort?`,
+        antworten: ["Antwort A", "Antwort B", "Antwort C", "Antwort D"],
+        korrekt: Math.floor(Math.random() * 4)
+      });
+    }
+
+    let spielCode = "";
+    let aktuellerIndex = 0;
+    let punkte = 0;
+    let frageReihenfolge = [];
+    let spielerID = "" + Math.floor(Math.random() * 1000000);
+
+    function mischeFragen() {
+      frageReihenfolge = [...Array(quizFragen.length).keys()].sort(() => Math.random() - 0.5).slice(0, 10);
+    }
+
+    document.getElementById("erstellenBtn").onclick = () => {
+      spielCode = Math.floor(100000 + Math.random() * 900000).toString();
+      document.getElementById("codeAnzeige").innerText = `Code: ${spielCode}`;
+      mischeFragen();
+      set(ref(db, `spiele/${spielCode}`), {
+        fragenIndex: 0,
+        reihenfolge: frageReihenfolge,
+        spieler: {}
+      });
+      startQuiz();
+    };
+
+    document.getElementById("beitretenBtn").onclick = () => {
+      spielCode = document.getElementById("codeInput").value;
+      if (!spielCode.match(/^\d{6}$/)) {
+        alert("Bitte gib einen gültigen 6-stelligen Code ein.");
+        return;
+      }
+      onValue(ref(db, `spiele/${spielCode}`), snapshot => {
+        const daten = snapshot.val();
+        if (daten && typeof daten.fragenIndex === 'number') {
+          aktuellerIndex = daten.fragenIndex;
+          frageReihenfolge = daten.reihenfolge || [];
+          zeigeFrage();
+        }
+        const punkteAnzeigen = daten.spieler || {};
+        let resultHTML = '<h2 class="text-lg font-bold mb-2">Bestenliste</h2><ul class="text-left ml-4">';
+        for (let [spieler, p] of Object.entries(punkteAnzeigen)) {
+          resultHTML += `<li>${spieler}: ${p} Punkte</li>`;
+        }
+        resultHTML += '</ul>';
+        document.getElementById("ranking").innerHTML = resultHTML;
+      });
+      startQuiz();
+    };
+
+    function startQuiz() {
+      document.getElementById("setup").style.display = "none";
+      document.getElementById("quiz").style.display = "block";
+      zeigeFrage();
+    }
+
+    function zeigeFrage() {
+      const frageIndex = frageReihenfolge[aktuellerIndex];
+      const frageObj = quizFragen[frageIndex];
+      if (!frageObj) return;
+      document.getElementById("frage").innerText = frageObj.frage;
+      const container = document.getElementById("antworten");
+      container.innerHTML = "";
+      frageObj.antworten.forEach((a, i) => {
+        const btn = document.createElement("button");
+        btn.className = "bg-indigo-500 text-white p-3 m-2 rounded-xl hover:bg-indigo-700 w-full";
+        btn.innerText = a;
+        btn.onclick = () => pruefeAntwort(i);
+        container.appendChild(btn);
+      });
+    }
+
+    function pruefeAntwort(index) {
+      const frageIndex = frageReihenfolge[aktuellerIndex];
+      if (index === quizFragen[frageIndex].korrekt) punkte++;
+      aktuellerIndex++;
+      update(ref(db, `spiele/${spielCode}/spieler`), { [spielerID]: punkte });
+      if (aktuellerIndex < frageReihenfolge.length) {
+        set(ref(db, `spiele/${spielCode}`), {
+          fragenIndex: aktuellerIndex,
+          reihenfolge: frageReihenfolge,
+          spieler: { [spielerID]: punkte }
+        });
+        zeigeFrage();
+      } else {
+        document.getElementById("quiz").innerHTML = `<h2 class='text-xl font-bold mb-4'>Fertig! Du hast ${punkte} von ${frageReihenfolge.length} Punkten.</h2><div id='ranking'></div>`;
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen flex items-center justify-center text-white">
+  <div class="w-full max-w-2xl p-8 bg-white text-gray-800 rounded-2xl shadow-2xl">
+    <h1 class="text-3xl font-extrabold mb-4 text-center">🌟 Multiplayer Quiz</h1>
+    <div id="setup">
+      <button id="erstellenBtn" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-xl mb-4 w-full">Spiel erstellen</button>
+      <p id="codeAnzeige" class="mb-4 font-semibold text-center"></p>
+      <input id="codeInput" class="border px-4 py-2 rounded w-full mb-4" placeholder="Code eingeben">
+      <button id="beitretenBtn" class="bg-gradient-to-r from-green-400 to-blue-500 text-white px-6 py-3 rounded-xl w-full">Beitreten</button>
+    </div>
+    <div id="quiz" style="display:none">
+      <p id="frage" class="text-xl font-semibold mb-4"></p>
+      <div id="antworten" class="grid grid-cols-1 gap-4"></div>
+      <div id="ranking" class="mt-6"></div>
+    </div>
+    <footer class="mt-10 text-center text-sm text-gray-500">Erstellt von Lennard ✨</footer>
+  </div>
+</body>
+</html>
